@@ -1,0 +1,47 @@
+name: build-windows
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build core
+        shell: bash
+        run: |
+          go mod tidy
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ech-workers.exe ech-workers.go
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build GUI
+        shell: bash
+        run: |
+          pip install pyinstaller PyQt5 pystray Pillow PySocks
+          pyinstaller --onefile --windowed --name ECHWorkersGUI --hidden-import=PyQt5 --icon=app_icon.png gui.py || pyinstaller --onefile --windowed --name ECHWorkersGUI --hidden-import=PyQt5 gui.py
+      - name: Smoke test (screenshot)
+        shell: bash
+        env:
+          ECH_SELFSHOT: shot.png
+        run: |
+          timeout 60 python gui.py || true
+          ls -l shot.png
+      - name: Package
+        shell: bash
+        run: |
+          mkdir release
+          cp ech-workers.exe dist/ECHWorkersGUI.exe release/
+          7z a ECHWorkers-status-win64.zip ./release/*
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: build-${{ github.run_number }}
+          files: |
+            ECHWorkers-status-win64.zip
+            shot.png
